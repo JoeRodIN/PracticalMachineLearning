@@ -1,0 +1,116 @@
+---
+title: "Classifying The Quality of Dumbbell Curl Execution"
+author: "Joseph Rodriguez"
+date: "February 5, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(caret)
+set.seed(1546)
+```
+
+## Introduction
+
+This project uses the data set cited in the next section to build a classifier to try and determine if a subject has performed the exercise - in this case dumbbell curls - correctly or incorrectly.  If incorrectly it attempts to classify exactly what common error may have occured.
+
+
+## Citation
+
+The data set used in this exploration was taken from the study:
+
+<i>
+Ugulino, W.; Cardador, D.; Vega, K.; Velloso, E.; Milidiu, R.; Fuks, H. Wearable Computing: Accelerometers' Data Classification of Body Postures and Movements. Proceedings of 21st Brazilian Symposium on Artificial Intelligence. Advances in Artificial Intelligence - SBIA 2012. In: Lecture Notes in Computer Science. , pp. 52-61. Curitiba, PR: Springer Berlin / Heidelberg, 2012. ISBN 978-3-642-34458-9. DOI: 10.1007/978-3-642-34459-6_6.
+
+Read more: http://groupware.les.inf.puc-rio.br/har#sbia_paper_section#ixzz4Xre2R81K
+</i>
+
+Training Data location:  https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+Testing Data location:  https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+
+## Prediction Classes and explanation
+
+The result of each traning exercise was given a label A to E, defined below:
+
+Class A: exactly according to the specification  
+Class B: throwing the elbows to the front  
+Class C: lifting the dumbbell only halfway  
+Class D: lowering the dumbbell only halfway  
+Class E: and throwing the hips to the front
+
+This is what will be used as the prediction when training the model and what result will be generated for each sample in our testing data.
+
+
+## Load and initial analysis
+
+Reading in the initial data set:
+```{r}
+training <- read.csv("C:\\Users\\josephro.josephro-PC.000\\Downloads\\pml-training.csv")
+testing <- read.csv("C:\\Users\\josephro.josephro-PC.000\\Downloads\\pml-testing.csv")
+
+```
+
+We then removed all the average, max, min columns as well as factors (except for classe which is what we're trying to predict).  In addition, the username and timestamps were also removed because this would have zero direct effect on whether the exercise was performed correctly. This makes sense since the averages will 'smooth out' the exercises and could 'hide' the quality of the exercises.  This also removes all NAs that occured in the original data.
+```{r}
+trainingPruned <- training[, c("yaw_arm", "yaw_belt", "yaw_dumbbell", "yaw_forearm", "gyros_belt_x", "gyros_belt_y", "gyros_belt_z", "gyros_arm_x", "gyros_arm_y", "gyros_arm_z", "gyros_dumbbell_x", "gyros_dumbbell_y", "gyros_dumbbell_z", "gyros_forearm_x", "gyros_forearm_y", "gyros_forearm_z", "accel_belt_x", "accel_belt_y", "accel_belt_z", "accel_arm_x", "accel_arm_y", "accel_arm_z", "accel_dumbbell_x", "accel_dumbbell_y", "accel_dumbbell_z", "accel_forearm_x", "accel_forearm_y", "accel_forearm_z", "magnet_arm_x", "magnet_arm_y", "magnet_arm_z", "magnet_belt_x", "magnet_belt_y", "magnet_belt_z", "magnet_dumbbell_x", "magnet_dumbbell_y", "magnet_dumbbell_z", "magnet_forearm_x", "magnet_forearm_y", "magnet_forearm_z", "roll_arm", "roll_belt", "roll_forearm", "roll_dumbbell", "pitch_arm", "pitch_belt", "pitch_forearm", "pitch_dumbbell", "classe")]
+```
+This new data.frame contains `r nrow(trainingPruned)` rows and `r ncol(trainingPruned)` columns.
+
+
+## Training Data and Cross-validation
+
+From the pruned dataset, data sets for training and validation are created.
+```{r}
+ttrainIndex <- createDataPartition(trainingPruned$classe, p=0.7, list=FALSE)
+actTrain <- trainingPruned[ttrainIndex, ]
+actValidate <- trainingPruned[-ttrainIndex, ]
+```
+
+
+Then a random forest is built using the training set extracted above and results checked:
+```{r message=FALSE, warning=FALSE, cache=TRUE}
+modelRF <- train(classe ~ ., data = actTrain, method = "rf", trControl = trainControl(method = "cv"), number = 4)
+```
+
+```{r}
+modelRF
+```
+Cross-validation was built into the train function and 10-fold cross validation was used.  Since the accurary of `r modelRF$results[modelRF$results$Accuracy == max(modelRF$results$Accuracy), 2] * 100` is greater than 99%, additional measures to enhance accuracy are not necessary.
+
+The model selected uses `r modelRF$bestTune` classifiers, and the below plot verifies that this gives the optimal accuracy.
+```{r}
+plot(modelRF, log = "y", lwd = 2, main = "Random forest accuracy", xlab = "Predictors", 
+    ylab = "Accuracy")
+```
+
+While the random forrest generation took approx. 25 minutes on my laptop, the accuracy level as well as the built in cross-validation more than made up for the wait in building the model.
+
+
+## Validate the Model Generated
+```{r}
+predValidate <- predict(modelRF, actValidate)
+table(predValidate, actValidate$classe)
+```
+This gives an accuracy of `r sum(diag(table(predValidate, actValidate$classe))) / sum(table(predValidate, actValidate$classe)) * 100`.
+
+
+## Out of Sample error
+
+```{r}
+validateAccuracy <- sum(predValidate == actValidate$classe)/length(predValidate)
+```
+The estimate for the out of sample error on the validation set is `r (1 - validateAccuracy) * 100
+`%.
+
+## Results on the Actual test data
+
+```{r}
+predTEST <- predict(modelRF, testing)
+predTEST
+```
+NOTE:  The testing data does not need to be pruned since the model will only select on the predictors (column values) used in building the model.
+
